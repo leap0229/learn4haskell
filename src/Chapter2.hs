@@ -337,8 +337,8 @@ ghci> :l src/Chapter2.hs
 -}
 subList :: Int -> Int -> [a] -> [a]
 subList _ _ [] = []
-subList n m xs | n < 0 || m < 0 = []
-               | otherwise = take (m - n + 1) $ drop n xs
+subList n m xs | n < 0 || m < 0 || m < n = []
+               | otherwise = take (m - n + 1) $ drop (n) xs
 
 {- |
 =⚔️= Task 4
@@ -629,11 +629,11 @@ Write a function that takes elements of a list only on even positions.
 [2,3,4]
 -}
 takeEven :: [a] -> [a]
-takeEven xs = go 0 xs
-  where 
+takeEven xs = go True xs
+  where
     go _ [] = []
-    go n (y:ys) | even n    = y : go (n + 1) ys
-                | otherwise = go (n + 1) ys
+    go b (y:ys) | b         = y : go (not b) ys
+                | otherwise = go (not b) ys
 
 {- |
 =🛡= Higher-order functions
@@ -740,7 +740,7 @@ value of the element itself
 🕯 HINT: Use combination of 'map' and 'replicate'
 -}
 smartReplicate :: [Int] -> [Int]
-smartReplicate xs = concat $ map (\x -> replicate x x) xs
+smartReplicate = concatMap (\x -> replicate x x)
 
 {- |
 =⚔️= Task 9
@@ -878,9 +878,10 @@ and reverses it.
   cheating!
 -}
 rewind :: [a] -> [a]
-rewind [] = []
-rewind (x:xs) = rewind xs ++ [x]
-
+rewind xs = go [] xs
+  where
+    go acc [] = acc
+    go acc (y:ys) = go (y:acc) ys
 
 {-
 You did it! Now it is time to the open pull request with your changes
