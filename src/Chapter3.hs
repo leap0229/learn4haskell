@@ -392,12 +392,13 @@ data Task2Monster = Task2Monster {
 } deriving (Show)
 
 fight' :: Task2Knight -> Task2Monster -> Int
-fight' knight monster | knightIsVictory  = task2knightGold knight + task2monsterGold monster
-                     | monsterIsVictory = -1
-                     | otherwise        = task2knightGold knight 
-                    where
-                      knightIsVictory = task2knightAttack knight >= task2monsterHealth monster
-                      monsterIsVictory = task2monsterAttack monster >= task2knightHealth knight
+fight' knight monster
+    | knightIsVictory  = task2knightGold knight + task2monsterGold monster
+    | monsterIsVictory = -1
+    | otherwise        = task2knightGold knight 
+  where
+    knightIsVictory = task2knightAttack knight >= task2monsterHealth monster
+    monsterIsVictory = task2monsterAttack monster >= task2knightHealth knight
 
 {- |
 =🛡= Sum types
@@ -505,6 +506,13 @@ After defining the city, implement the following functions:
    complicated task, walls can be built only if the city has a castle
    and at least 10 living __people__ inside in all houses of the city totally.
 -}
+testMagicalCity :: MagicalCity
+testMagicalCity = MagicalCity { 
+  magicalCityCastle = NoneCastle,
+  magicalCityFacility = Church,
+  magicalCityHouse = [House { peopleInHouse = Four }]
+}
+
 data MagicalCity = MagicalCity {
   magicalCityCastle :: Castle,
   magicalCityFacility :: Facility,
@@ -518,19 +526,29 @@ data Castle = NoneCastle
 
 data Facility = NoneFacility | Church | Library deriving (Show)
 
+data HousePeople = One | Two | Three | Four 
+  deriving (Show)
+
 data House = House {
-  housePeople :: Int
+  peopleInHouse :: HousePeople
 } deriving (Show)
+
+countPeople :: HousePeople -> Int
+countPeople housePeople = case housePeople of
+  One   -> 1
+  Two   -> 2
+  Three -> 3
+  Four  -> 4
 
 buildCastle :: MagicalCity -> String -> MagicalCity
 buildCastle city name = case magicalCityCastle city of
                                 (CastleWithWall _) -> city { magicalCityCastle = CastleWithWall name}
                                 _ -> city { magicalCityCastle = Castle name}
 
-buildHouse :: MagicalCity -> Int -> MagicalCity
-buildHouse city housePeopleCount = city { magicalCityHouse = newHouses}
+buildHouse :: MagicalCity -> HousePeople -> MagicalCity
+buildHouse city peopleCount = city { magicalCityHouse = newHouses}
   where
-    newHouses = House { housePeople = housePeopleCount } : magicalCityHouse city
+    newHouses = House { peopleInHouse = peopleCount } : magicalCityHouse city
 
 buildWalls :: MagicalCity -> MagicalCity
 buildWalls city = case (magicalCityCastle city) of
@@ -541,7 +559,7 @@ buildWalls city = case (magicalCityCastle city) of
                               city
                           _ -> city
                           where
-                            peopleNumInHouses = sum $ map housePeople $ magicalCityHouse city
+                            peopleNumInHouses = sum $ map (countPeople . peopleInHouse) $ magicalCityHouse city
 
 {-
 =🛡= Newtypes
@@ -999,7 +1017,7 @@ instance Append Gold where
 
 instance Append [a] where
   append :: [a] -> [a] -> [a]
-  append xs ys = xs ++ ys
+  append = (++)
 
 instance (Append a) => Append (Maybe a) where
   append :: Maybe a -> Maybe a -> Maybe a
@@ -1120,13 +1138,26 @@ newtype Defence = Defence Int deriving (Show)
 newtype Potion = Potion Int deriving (Show)
 newtype Spell = Spell Int deriving (Show)
 
-data Action = AttackAction | DrinkPotionAction Potion| CastSpellAction Spell | RunAwayAction
+-- Wrapper for each of KnightAction and MonsterAction 
+data Action = KnightAction KnightAction | MonsterAction MonsterAction
+
+-- Possible Action for Knight
+data KnightAction = KnightAttackAction | DrinkPotionAction Potion| CastSpellAction Spell
   deriving (Show)
 
+-- Possible Action for Monster
+data MonsterAction = MonsterAttackAction | RunAwayAction
+  deriving (Show)
+
+-- Meaning fight result
 data Result = FirstFighterWin | SecondFighterWin deriving (Show, Enum, Eq, Bounded)
+-- To be used in the same way as Bool type.
 nextResult :: Result -> Result
 nextResult result | result == maxBound = minBound
                   | otherwise       = succ result
+
+calculateHealth :: Attack -> Defence -> Health -> Health
+calculateHealth (Attack damage) (Defence defence) (Health health) = Health $ health - max 0 (damage - defence)
 
 class Fighter a where
   getHealth :: a -> Health
@@ -1140,6 +1171,7 @@ class Fighter a where
   setDefence :: Defence -> a -> a
   setDefence _ fighter = fighter
 
+  -- if True, Fighter is dead.
   isDead ::  a -> Bool
   isDead fighter = currentHealth <= 0
     where Health currentHealth = getHealth fighter
@@ -1151,11 +1183,15 @@ class Fighter a where
 
   getActions :: a -> [Action]
 
+  -- first argument fighter do action 
+  -- return active fighter and poassive fighter exchanged.
+  evalAction :: (Fighter b) => Action -> a -> b -> (b, a)
+
 data Knight = Knight {
   knightHealth :: Health,
   knigthAttack :: Attack,
   knightDefence :: Defence,
-  knightActions :: [Action]
+  knightActions :: [KnightAction]
 } deriving (Show)
 
 instance Fighter Knight where
@@ -1175,8 +1211,17 @@ instance Fighter Knight where
   setDefence defence knight = knight { knightDefence = defence }
 
   getActions :: Knight -> [Action]
-  getActions knight = knightActions knight
+  getActions knight = map KnightAction $ knightActions knight
 
+  evalAction :: (Fighter a, Fighter b) => Action -> a -> b -> (b, a)
+  evalAction (KnightAction action) knight fighter =
+    case action of
+      KnightAttackAction -> 
+        (attack knight fighter, knight)
+      DrinkPotionAction (Potion potion) -> 
+        (fighter, drinkPotion (Potion potion) knight)
+      CastSpellAction (Spell spell) ->
+        (fighter, castSpell (Spell spell) knight)
 
 drinkPotion :: (Fighter a) => Potion -> a -> a
 drinkPotion (Potion recoverHealth) knight = setHealth (Health newHealth) knight
@@ -1194,7 +1239,7 @@ castSpell (Spell incDefence) knight = setDefence (Defence newDefence) knight
 data Monster = Monster {
   monsterHealth :: Health,
   monsterAttack :: Attack,
-  monsterActions :: [Action]
+  monsterActions :: [MonsterAction]
 } deriving (Show)
 
 instance Fighter Monster where
@@ -1208,36 +1253,55 @@ instance Fighter Monster where
   setHealth health monster = monster { monsterHealth = health }
 
   getActions :: Monster -> [Action]
-  getActions monster = monsterActions monster
+  getActions monster = map MonsterAction $ monsterActions monster
 
-calculateHealth :: Attack -> Defence -> Health -> Health
-calculateHealth (Attack damage) (Defence defence) (Health health) = Health $ health - max 0 (damage - defence)
+  evalAction :: (Fighter a, Fighter b) => Action -> a -> b -> (b, a)
+  evalAction (MonsterAction action) monster fighter =
+    case action of
+      MonsterAttackAction -> 
+        (attack monster fighter, monster)
+      RunAwayAction -> 
+        (fighter, monster)
 
-
+-- entry function to fight
 fight :: (Fighter a, Fighter b) => a -> b -> Result
 fight firstFighter secondFighter = go SecondFighterWin firstFighter secondFighter combineActions
   where
+    -- generate a list of alternating actions for both fighters
     combineActions :: [Action]
     combineActions = concat [fa:sa:[] | (fa, sa) <- zip (cycle $ getActions firstFighter) (cycle $ getActions secondFighter)]
     
     go :: (Fighter a, Fighter b) => Result -> a -> b -> [Action] -> Result
     go result activeFighter passiveFighter (action:actions) 
       | isDead activeFighter = result
-      | otherwise = case action of
-                      AttackAction      
-                        -> go (nextResult result) (attack activeFighter passiveFighter) activeFighter actions
-                      DrinkPotionAction (Potion potion)
-                        -> go (nextResult result) passiveFighter (drinkPotion (Potion potion) activeFighter) actions
-                      CastSpellAction (Spell spell)
-                        -> go (nextResult result) passiveFighter (castSpell (Spell spell) activeFighter) actions
-                      RunAwayAction
-                        -> result
+      -- when monster do "run away"
+      | isDead passiveFighter = pred result
+      | otherwise = 
+          let (nextActiveFighter, nextPassiveFighter) = evalAction action activeFighter passiveFighter
+          in go (nextResult result) nextActiveFighter nextPassiveFighter actions 
 
 knight1 :: Knight
-knight1 = Knight { knightHealth = Health 10, knigthAttack = Attack 5, knightDefence = Defence 5, knightActions = [AttackAction, DrinkPotionAction (Potion 3), CastSpellAction (Spell 2)] } 
+knight1 = Knight { 
+  knightHealth = Health 10, 
+  knigthAttack = Attack 5, 
+  knightDefence = Defence 5, 
+  knightActions = [KnightAttackAction, DrinkPotionAction (Potion 3), CastSpellAction (Spell 2)] 
+} 
+
+knight2 :: Knight
+knight2 = Knight { 
+  knightHealth = Health 10,
+  knigthAttack = Attack 10,
+  knightDefence = Defence 5,
+  knightActions = [KnightAttackAction] 
+} 
 
 monster1 :: Monster
-monster1 = Monster { monsterHealth = Health 10, monsterAttack = Attack 10, monsterActions = [AttackAction, AttackAction,RunAwayAction] } 
+monster1 = Monster { 
+  monsterHealth = Health 10,
+  monsterAttack = Attack 10,
+  monsterActions = [MonsterAttackAction, MonsterAttackAction, MonsterAttackAction, RunAwayAction] 
+} 
 
 {-
 You did it! Now it is time to the open pull request with your changes
