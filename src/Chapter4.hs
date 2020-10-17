@@ -114,22 +114,30 @@ As always, try to guess the output first! And don't forget to insert
 the output in here:
 
 >>> :k Char
+Char :: *
 
 >>> :k Bool
+Bool :: *
 
 >>> :k [Int]
+[Int] :: *
 
 >>> :k []
+[] :: * -> *
 
 >>> :k (->)
+(->) :: * -> * -> *
 
 >>> :k Either
+Either :: * -> * -> *
 
 >>> data Trinity a b c = MkTrinity a b c
 >>> :k Trinity
+Trinity :: * -> * -> * -> *
 
 >>> data IntBox f = MkIntBox (f Int)
 >>> :k IntBox
+IntBox :: (* -> *) -> *
 
 -}
 
@@ -293,7 +301,8 @@ values and apply them to the type level?
 -}
 instance Functor (Secret e) where
     fmap :: (a -> b) -> Secret e a -> Secret e b
-    fmap = error "fmap for Box: not implemented!"
+    fmap _ (Trap e) = Trap e
+    fmap f (Reward a) = Reward $ f a
 
 {- |
 =⚔️= Task 3
@@ -306,6 +315,12 @@ typeclasses for standard data types.
 data List a
     = Empty
     | Cons a (List a)
+    deriving (Show)
+
+instance Functor List where
+    fmap :: (a -> b) -> List a -> List b
+    fmap _ Empty = Empty
+    fmap f (Cons x xs) = Cons (f x) (fmap f xs)
 
 {- |
 =🛡= Applicative
@@ -472,10 +487,11 @@ Implement the Applicative instance for our 'Secret' data type from before.
 -}
 instance Applicative (Secret e) where
     pure :: a -> Secret e a
-    pure = error "pure Secret: Not implemented!"
+    pure = Reward
 
     (<*>) :: Secret e (a -> b) -> Secret e a -> Secret e b
-    (<*>) = error "(<*>) Secret: Not implemented!"
+    Trap e <*> _ = Trap e
+    Reward f <*> x = fmap f x
 
 {- |
 =⚔️= Task 5
@@ -489,6 +505,18 @@ Implement the 'Applicative' instance for our 'List' type.
   type.
 -}
 
+instance Applicative List where
+    pure :: a -> List a
+    pure x = Cons x Empty
+
+    (<*>) :: List (a -> b) -> List a -> List b
+    Empty <*> _ = Empty
+    Cons f fs <*> xs = concatList $ Cons (fmap f xs) $ pure (fs <*> xs) 
+
+concatList :: List (List a) -> List a
+concatList Empty = Empty
+concatList (Cons Empty xss) = concatList xss
+concatList (Cons (Cons x xs) xss) = Cons x (concatList (Cons xs xss))
 
 {- |
 =🛡= Monad
@@ -600,7 +628,8 @@ Implement the 'Monad' instance for our 'Secret' type.
 -}
 instance Monad (Secret e) where
     (>>=) :: Secret e a -> (a -> Secret e b) -> Secret e b
-    (>>=) = error "bind Secret: Not implemented!"
+    Trap e >>= _ = Trap e
+    Reward a >>= f = f a
 
 {- |
 =⚔️= Task 7
@@ -611,6 +640,10 @@ Implement the 'Monad' instance for our lists.
   maybe a few) to flatten lists of lists to a single list.
 -}
 
+instance Monad List where
+    (>>=) :: List a -> (a -> List b) -> List b
+    Empty >>= _ = Empty
+    Cons x xs >>= f = concatList $ Cons (f x) (pure $ xs >>= f)
 
 {- |
 =💣= Task 8*: Before the Final Boss
@@ -629,7 +662,7 @@ Can you implement a monad version of AND, polymorphic over any monad?
 🕯 HINT: Use "(>>=)", "pure" and anonymous function
 -}
 andM :: (Monad m) => m Bool -> m Bool -> m Bool
-andM = error "andM: Not implemented!"
+andM mb1 mb2 = mb1 >>= (\b1 -> if b1 then mb2 else pure b1)
 
 {- |
 =🐉= Task 9*: Final Dungeon Boss
@@ -672,8 +705,21 @@ Specifically,
    subtree of a tree
  ❃ Implement the function to convert Tree to list
 -}
+data Tree a = Leaf | Node (Tree a) a (Tree a)
+  deriving (Show)
 
+instance Functor Tree where
+  fmap :: (a -> b) -> Tree a -> Tree b
+  fmap _ Leaf = Leaf
+  fmap f (Node l x r) = Node (fmap f l) (f x) (fmap f r)
 
+reverseTree :: Tree a -> Tree a
+reverseTree Leaf = Leaf
+reverseTree (Node l x r) = Node (reverseTree r) x (reverseTree l)
+
+convertTreeToList :: Tree a -> [a]
+convertTreeToList Leaf = []
+convertTreeToList (Node l x r) = x : convertTreeToList l ++ convertTreeToList r
 {-
 You did it! Now it is time to the open pull request with your changes
 and summon @vrom911 and @chshersh for the review!
