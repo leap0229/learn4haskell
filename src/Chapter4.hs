@@ -511,12 +511,12 @@ instance Applicative List where
 
     (<*>) :: List (a -> b) -> List a -> List b
     Empty <*> _ = Empty
-    Cons f fs <*> xs = concatList $ Cons (fmap f xs) $ pure (fs <*> xs) 
+    _ <*> Empty = Empty
+    Cons f fs <*> xs = append (fmap f xs) (fs <*> xs) 
 
-concatList :: List (List a) -> List a
-concatList Empty = Empty
-concatList (Cons Empty xss) = concatList xss
-concatList (Cons (Cons x xs) xss) = Cons x (concatList (Cons xs xss))
+append :: List a -> List a -> List a
+append Empty l = l
+append (Cons x xs) l = Cons x $ append xs l
 
 {- |
 =🛡= Monad
@@ -643,7 +643,11 @@ Implement the 'Monad' instance for our lists.
 instance Monad List where
     (>>=) :: List a -> (a -> List b) -> List b
     Empty >>= _ = Empty
-    Cons x xs >>= f = concatList $ Cons (f x) (pure $ xs >>= f)
+    l >>= f = concatList $ fmap f l
+
+concatList :: List (List a) -> List a
+concatList Empty = Empty
+concatList (Cons xs xss) = append xs $ concatList xss
 
 {- |
 =💣= Task 8*: Before the Final Boss
